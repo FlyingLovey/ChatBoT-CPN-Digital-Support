@@ -38,6 +38,8 @@ services/rag_service.py  ค้นคืนเอกสารตาม pipeline 
 services/llm_client.py   คุยกับผู้ให้บริการ LLM (Chat Completions, รองรับสตรีม)
 scripts/build_index.py   สร้างดัชนีจากเอกสารจริง เก็บลง rag_index/
 rag_index/               ดัชนีที่สร้างไว้ (chunks.jsonl, embeddings.npy, meta.json) — ไม่ควร commit
+requirements.txt         แพ็กเกจฝั่งเว็บอย่างเดียว (Vercel ใช้ไฟล์นี้)
+requirements-rag.txt     แพ็กเกจครบชุดรวม RAG (ใช้ตอนรันในเครื่อง)
 static/, templates/      หน้าเว็บ (HTML/CSS/JS) รวมกล่องแสดงแหล่งอ้างอิงใต้คำตอบ
 api/index.py             entrypoint สำหรับ Vercel (ดูข้อจำกัดท้ายไฟล์)
 ```
@@ -49,11 +51,22 @@ api/index.py             entrypoint สำหรับ Vercel (ดูข้อ�
 ```bash
 python -m venv .venv
 .venv\Scripts\activate           # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+
+# ถ้าจะรัน LM Studio ไปพร้อมกัน ลง torch แบบ CPU ก่อน (เล็กกว่ามากและไม่แย่ง VRAM)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+pip install -r requirements-rag.txt
 ```
 
-> `sentence-transformers` และ `torch` มีขนาดใหญ่ (หลาย GB) การติดตั้งครั้งแรกใช้เวลานาน
-> ถ้าต้องการรันเฉพาะโหมดแชทธรรมดา ข้ามสองตัวนี้ได้ แล้วตั้ง `RAG_ENABLED=false`
+**แพ็กเกจแยกเป็นสองไฟล์** เพราะ Vercel จำกัดขนาด serverless function ไว้ที่ 500 MB
+ส่วน torch + sentence-transformers รวมกันเกิน 5 GB
+
+| ไฟล์ | ใช้เมื่อไหร่ |
+|---|---|
+| `requirements.txt` | เฉพาะตัวเว็บ ไม่มี RAG — เป็นไฟล์ที่ Vercel ใช้ตอน build |
+| `requirements-rag.txt` | ครบทุกอย่างรวม RAG (มี `-r requirements.txt` อยู่ข้างในแล้ว) — ใช้ตอนรันในเครื่อง |
+
+ถ้าจะรันเฉพาะโหมดแชทธรรมดา ติดตั้งแค่ `requirements.txt` แล้วตั้ง `RAG_ENABLED=false` ก็พอ
 
 ### 2. สร้างดัชนี (ทำครั้งเดียว)
 
@@ -142,10 +155,24 @@ uvicorn main:app --reload
 รีสตาร์ทแล้วหาย และไม่ scale ข้ามหลาย process ถ้าจะใช้จริงต้องย้ายไป Redis หรือฐานข้อมูล
 โดยใช้ `session_id` เดิมเป็น key ได้เลย
 
-**deploy บน Vercel ใช้โหมด RAG ไม่ได้** เพราะ serverless function มีข้อจำกัดเรื่องขนาด
-package (torch + โมเดลรวมกันหลาย GB) และไม่มีดิสก์ถาวรให้เก็บดัชนี — ถ้าจะขึ้น Vercel
-ต้องตั้ง `RAG_ENABLED=false` แล้วจะได้แชทบอทธรรมดา ส่วนโหมด RAG ให้รันในเครื่องหรือบน
-เซิร์ฟเวอร์ที่มีดิสก์ถาวร
+**deploy บน Vercel ใช้โหมด RAG ไม่ได้** serverless function จำกัดขนาดไว้ที่ 500 MB แต่
+torch + sentence-transformers รวมกันประมาณ 5.5 GB และ Vercel ไม่มีดิสก์ถาวรให้เก็บดัชนีด้วย
+ด้วยเหตุนี้ `requirements.txt` จึงมีแค่แพ็กเกจฝั่งเว็บ ส่วน RAG แยกไปอยู่ `requirements-rag.txt`
+
+ถ้าจะ deploy ขึ้น Vercel ให้ตั้ง Environment Variable ที่ Project Settings ดังนี้
+
+| ตัวแปร | ค่า |
+|---|---|
+| `RAG_ENABLED` | `false` |
+| `ONLINE_BASE_URL` | `https://openrouter.ai/api/v1` |
+| `ONLINE_API_KEY` | (คีย์ของคุณ) |
+| `ONLINE_MODEL` | `openai/gpt-4o-mini` |
+| `DEFAULT_LLM_MODE` | `online` |
+| `SYSTEM_PROMPT` | (ข้อความระบบ) |
+
+จะได้แชทบอทธรรมดาที่เปิดจากที่ไหนก็ได้ ส่วนโหมด RAG ที่เป็นเนื้อหาหลักของสารนิพนธ์
+ให้สาธิตจากเครื่องตัวเอง — ต้องตั้ง `DEFAULT_LLM_MODE=online` ด้วย เพราะบน Vercel
+ไม่มีทางต่อ LM Studio ที่รันอยู่ในเครื่องคุณได้
 
 **บริบทไม่สะสมข้ามรอบ** แต่ละคำถามค้นเอกสารใหม่ทุกครั้ง ไม่เก็บบริบทเก่าไว้ในประวัติ
 เพื่อกัน prompt ยาวขึ้นเรื่อยๆ และกันเอกสารที่ไม่เกี่ยวมารบกวนคำตอบรอบถัดไป
