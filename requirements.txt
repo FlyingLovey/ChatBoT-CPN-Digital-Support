@@ -1,0 +1,15 @@
+# --- แอปเว็บ ---
+fastapi>=0.141.1
+httpx>=0.28.1
+jinja2>=3.1.6
+pydantic-settings>=2.15.0
+python-dotenv>=1.2.2
+uvicorn[standard]>=0.52.1
+
+# --- RAG: ค้นคืนเอกสารก่อนตอบ ---
+# เวอร์ชันชุดเดียวกับที่ใช้ในการทดลองของสารนิพนธ์ (Model AI/lm_studio_eval/requirements.txt)
+# เพื่อให้ผลการค้นคืนของแชทบอทตรงกับที่รายงานไว้
+sentence-transformers>=3.0.0   # โหลด multilingual-e5-base และ bge-reranker-v2-m3
+rank-bm25>=0.2.2               # BM25 สำหรับ hybrid search
+numpy>=1.26.0                  # เก็บ/คำนวณเวกเตอร์ของดัชนี
+torch>=2.2.0                   # backend ของ sentence-transformers

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IT Support Chatbot (RAG)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+  </head>
+  <body>
+    <div class="app-container">
+      <div class="model-bar">
+        <div class="mode-switch" role="radiogroup" aria-label="แหล่งของโมเดล">
+          <button id="mode-offline" class="mode-option" type="button" role="radio"
+                  aria-checked="false" data-mode="offline">ออฟไลน์</button>
+          <button id="mode-online" class="mode-option" type="button" role="radio"
+                  aria-checked="false" data-mode="online">ออนไลน์</button>
+        </div>
+        <select id="model-select" class="model-select" aria-label="เลือกโมเดล" disabled>
+          <option value="">กำลังโหลดรายชื่อโมเดล...</option>
+        </select>
+      </div>
+
+      <header class="app-header">
+        <div class="app-header-brand">
+          <img class="app-logo" src="/static/img/central-pattana-logo.png" alt="Central Pattana" />
+          <div class="app-header-text">
+            <h1>IT Support Chatbot</h1>
+            <span class="app-subtitle">ถามปัญหาการใช้งานระบบงาน ระบบจะค้นหาคำตอบจากคู่มือก่อนตอบ</span>
+            <span id="rag-badge" class="rag-badge loading">กำลังโหลดฐานความรู้...</span>
+          </div>
+        </div>
+        <button id="new-chat-button" class="new-chat-button" type="button" title="เริ่มบทสนทนาใหม่ (ล้างความจำของ session นี้)">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 12a8 8 0 0 1 13.66-5.66M20 12a8 8 0 0 1-13.66 5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M17 3v4h-4M7 21v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>เริ่มใหม่</span>
+        </button>
+      </header>
+
+      <main id="chat-window" class="chat-window">
+        <div id="empty-state" class="empty-state">
+          <div class="empty-state-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M12 2a1 1 0 0 1 1 1v1.06A8.004 8.004 0 0 1 20 12v1h1a1 1 0 1 1 0 2h-1.08A8.003 8.003 0 0 1 13 21.94V23a1 1 0 1 1-2 0v-1.06A8.003 8.003 0 0 1 4.08 15H3a1 1 0 1 1 0-2h1v-1a8.004 8.004 0 0 1 7-7.94V3a1 1 0 0 1 1-1Zm0 4a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm-2.25 4.5a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5Zm4.5 0a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5Z"
+                fill="currentColor"
+              />
+            </svg>
+          </div>
+          <p class="empty-state-title">สวัสดีครับ 👋</p>
+          <p class="empty-state-desc">
+            ถามได้เลยว่าใช้งานระบบไหนติดปัญหาอะไร ระบบจะค้นหาจากคู่มือการใช้งานแล้วตอบพร้อมบอกว่าอ้างอิงจากเอกสารฉบับไหน
+          </p>
+        </div>
+        <div id="loading-indicator" class="loading-indicator hidden">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+      </main>
+
+      <div id="error-banner" class="error-banner hidden"></div>
+
+      <form id="chat-form" class="chat-form">
+        <input
+          id="message-input"
+          class="message-input"
+          type="text"
+          placeholder="เช่น ลืมรหัสผ่านเข้าระบบ ต้องทำอย่างไร"
+          autocomplete="off"
+          required
+        />
+        <button id="send-button" class="send-button" type="submit" title="ส่งข้อความ">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 12h15M13 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="stop-button" class="stop-button hidden" type="button" title="หยุดการตอบกลับ">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <script src="/static/js/chat.js"></script>
+  </body>
+</html>

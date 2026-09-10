@@ -1,0 +1,765 @@
+/* ---------- ตัวแปรกลาง ----------
+   รวมสี/ระยะห่าง/ความโค้ง/เงาไว้ที่เดียว แทนที่จะกระจายค่าเป็นเลขดิบๆ ทั่วไฟล์
+   ทำให้ปรับโทนสีหรือความหนาแน่นของ UI ทีเดียวได้จากจุดเดียว และเห็นภาพรวมของ
+   ดีไซน์ระบบง่ายกว่าไล่หาทีละ selector
+
+   ธีมใหม่: อ้างอิงแบรนด์ "Central Pattana" — พื้นขาว/สว่าง ดูหรูและสุภาพแบบ
+   คอร์ปอเรตอสังหาฯ พรีเมียม สีทอง #AE9660 และดำ #141212 สุ่มค่าโดยตรงจากไฟล์
+   โลโก้ Central Pattana-logo_stack-01.png ที่ผู้ใช้ให้มา (ตรงกับ meta theme-color
+   ของเว็บ space.centralpattana.co.th ที่เป็น #B39656 ด้วย) แทนธีมมืดไล่เฉดม่วงเดิม */
+:root {
+  --color-bg: #ffffff;
+  --color-bg-gradient: radial-gradient(1200px 600px at 50% -10%, #f6f1e5 0%, #ffffff 55%);
+  --color-surface: #ffffff;
+  --color-surface-raised: #fbfaf7;
+  --color-surface-alt: #f4f1ea;
+  --color-border: #e7e2d5;
+  --color-border-strong: #d3ccb8;
+  --color-text: #141212;
+  --color-text-muted: #6b6560;
+  --color-text-faint: #99938a;
+
+  --color-accent: #ae9660;
+  --color-accent-hover: #8f7a4c;
+  --color-accent-soft: rgba(174, 150, 96, 0.14);
+  --gradient-accent: linear-gradient(135deg, #ae9660 0%, #c7af79 100%);
+  /* ตัวหนังสือบนพื้น gold ต้องเป็นสีเข้ม (ไม่ใช่ขาว) — ขาวบนทองให้ contrast
+     แค่ ~2.9:1 ต่ำกว่าเกณฑ์ WCAG AA ในขณะที่ดำให้ ~6.5:1 และยังเข้ากับโลโก้ที่
+     ใช้คู่สีดำ+ทองอยู่แล้วด้วย */
+  --color-on-accent: #141212;
+
+  --color-danger: #b3261e;
+  --color-danger-hover: #8f1e18;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --space-sm: 8px;
+  --space-md: 16px;
+
+  --shadow-elevated: 0 24px 60px -20px rgba(20, 18, 18, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* Kanit ก่อน เพื่อให้ตรงกับฟอนต์หลักที่ใช้สอนเรื่อง UI/UX ในเลกเชอร์
+     Noto Sans Thai / Segoe UI เป็น fallback เผื่อโหลด Kanit จาก Google Fonts ไม่สำเร็จ */
+  font-family: "Kanit", "Noto Sans Thai", "Segoe UI", system-ui, sans-serif;
+  background: var(--color-bg-gradient), var(--color-bg);
+  color: var(--color-text);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- แถบเลือกโมเดล ----------
+   วางเป็นแถบบางๆ ชิดขวาบนสุดของการ์ดแชท อยู่ใน flow ปกติ (ไม่ใช้ position: fixed)
+   เพื่อไม่ให้ไปทับซ้อนกับปุ่ม "เริ่มใหม่" บนจอมือถือที่การ์ดเต็มความกว้างจอพอดี */
+.model-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px 0;
+  background: var(--color-surface-raised);
+}
+
+/* ปุ่มสลับแบบ segmented control: สองตัวเลือกที่ตัดกันเอง เห็นพร้อมกันทั้งคู่ว่ามี
+   อะไรให้เลือกบ้าง ต่างจาก dropdown ที่ต้องกดเปิดก่อนถึงจะรู้ */
+.mode-switch {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 18, 18, 0.05);
+  border: 1px solid var(--color-border);
+}
+
+.mode-option {
+  padding: 4px 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mode-option:hover:not(:disabled):not([aria-checked="true"]) {
+  color: var(--color-text);
+}
+
+.mode-option[aria-checked="true"] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(20, 18, 18, 0.12);
+}
+
+/* โหมดที่ยังไม่ได้ตั้งค่าใน .env — ยังแสดงให้เห็นว่ามีอยู่ แต่กดไม่ได้
+   (ดีกว่าซ่อนทิ้ง เพราะผู้ใช้จะไม่รู้เลยว่ามีโหมดนี้และต้องตั้งค่าอะไรถึงจะใช้ได้) */
+.mode-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.model-select {
+  max-width: 260px;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  cursor: pointer;
+  /* ชื่อโมเดลบางตัวยาวมาก (เช่น deepseek-r1-0528-qwen3-8b) ตัดด้วย ... แทนที่จะ
+     ดันแถบจนล้นออกนอกจอมือถือ */
+  text-overflow: ellipsis;
+}
+
+.model-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.model-select.error {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* ---------- layout: เขียนแบบ mobile-first ----------
+   ค่าเริ่มต้น (ไม่มี media query) คือสไตล์สำหรับจอเล็ก/มือถือ: เต็มจอ ไม่มีขอบโค้ง/เงา
+   แล้วค่อยขยาย/ปรับเพิ่มให้จอใหญ่ขึ้นด้วย @media (min-width: ...) ด้านล่าง โดยจะกลาย
+   เป็นการ์ดลอยกึ่งกลางจอ คล้ายหน้าต่างแอปแชทบนเดสก์ท็อป */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--color-surface);
+}
+
+.app-header {
+  padding: 14px var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  background: var(--color-surface-raised);
+}
+
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* โลโก้แบรนด์จริง (Central Pattana) แทนไอคอนนามธรรมเดิม — วางชิดซ้ายบนสุดของ
+   แอป (มุมซ้ายบนของการ์ด/หน้าเว็บ) ตามที่ผู้ใช้ระบุ ใช้ height คงที่แล้วปล่อย
+   width ให้เป็นสัดส่วนตามภาพจริง เพื่อไม่ให้โลโก้บิดเบี้ยว */
+.app-logo {
+  flex: 0 0 auto;
+  height: 28px;
+  width: auto;
+  display: block;
+}
+
+.app-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app-subtitle {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-chat-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.new-chat-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.new-chat-button span {
+  /* ซ่อนข้อความบนจอแคบมากๆ เหลือแค่ไอคอน กันปุ่มดันชื่อแอปจนล้น */
+  display: none;
+}
+
+.new-chat-button:hover {
+  background: var(--color-surface-alt);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.new-chat-button:active {
+  transform: scale(0.96);
+}
+
+.chat-window {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-behavior: smooth;
+}
+
+.chat-window::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-window::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: var(--radius-pill);
+}
+
+/* ---------- empty state ----------
+   แสดงเฉพาะตอนที่ยังไม่มีบทสนทนาจริงเกิดขึ้นเลย ไม่ใช่ข้อความ AI ปลอมที่ค้างอยู่ถาวร
+   ถูกซ่อนทันทีที่ผู้ใช้ส่งข้อความแรก และถูกเรียกกลับมาแสดงอีกครั้งตอนกด "เริ่มใหม่" */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--color-text-faint);
+  padding: 24px;
+  gap: 6px;
+}
+
+.empty-state.hidden {
+  display: none;
+}
+
+.empty-state-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  margin-bottom: 10px;
+}
+
+.empty-state-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.empty-state-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--color-text-faint);
+  max-width: 34ch;
+}
+
+/* ---------- ข้อความในบทสนทนา ----------
+   แต่ละแถวมี avatar + (บับเบิล เรียงตามเวลา) เพื่อให้แยกฝั่งผู้พูดได้ไวขึ้นด้วยสายตา
+   โดยไม่ต้องอ่านสีบับเบิลอย่างเดียว ตรงกับหลัก "Recognition rather than recall" */
+.message {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 92%;
+}
+
+.message.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message.ai {
+  align-self: flex-start;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-accent);
+}
+
+.avatar svg {
+  width: 15px;
+  height: 15px;
+}
+
+.message.ai .avatar {
+  background: var(--gradient-accent);
+}
+
+.message.user .avatar {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+}
+
+.message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.message.user .message-body {
+  align-items: flex-end;
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message.user .bubble {
+  background: var(--gradient-accent);
+  color: var(--color-on-accent);
+  border-bottom-right-radius: 4px;
+}
+
+.message.ai .bubble {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 4px;
+}
+
+.message-time {
+  font-size: 0.68rem;
+  color: var(--color-text-faint);
+  padding: 0 4px;
+}
+
+.bubble code {
+  background: rgba(20, 18, 18, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.bubble pre {
+  background: rgba(20, 18, 18, 0.08);
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+.bubble pre code {
+  background: none;
+  padding: 0;
+}
+
+.bubble ul,
+.bubble ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.bubble strong {
+  color: var(--color-accent-hover);
+}
+
+/* บับเบิลผู้ใช้พื้น gold ใช้ตัวหนังสือเข้ม (--color-on-accent) อยู่แล้วซึ่งให้
+   contrast ~6.5:1 ผ่านเกณฑ์ WCAG AA สบายๆ ส่วน <strong> ให้เข้มกว่าตัวปกติ
+   นิดหน่อยด้วย font-weight ที่สูงขึ้น (มาจาก markdown) จึงไม่ต้องเปลี่ยนสีซ้ำ */
+.message.user .bubble strong {
+  color: var(--color-on-accent);
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+  align-self: flex-start;
+  margin-left: 36px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: 4px;
+  width: fit-content;
+}
+
+.loading-indicator.hidden {
+  display: none;
+}
+
+.loading-indicator .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-faint);
+  animation: bounce 1.2s infinite ease-in-out;
+}
+
+.loading-indicator .dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.loading-indicator .dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message {
+  animation: message-in 0.2s ease-out;
+}
+
+.error-banner {
+  margin: 0 var(--space-md) var(--space-sm);
+  padding: 10px 14px;
+  background: rgba(179, 38, 30, 0.08);
+  border: 1px solid rgba(179, 38, 30, 0.28);
+  color: #8f1e18;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  transition: opacity 0.15s ease;
+}
+
+.error-banner.hidden {
+  display: none;
+}
+
+/* ตัวแปรสถานะ "แจ้งให้ทราบเฉยๆ" (เช่น กด "หยุด" การตอบเอง) แยกโทนจาก error จริง
+   ใช้ element เดียวกับ error-banner แค่สลับคลาส เพื่อไม่ต้องเพิ่ม DOM ซ้ำซ้อน */
+.error-banner.notice {
+  background: var(--color-surface-alt);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-muted);
+}
+
+.chat-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 12px var(--space-md) 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.message-input {
+  flex: 1;
+  padding: 13px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 1rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.message-input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.message-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.send-button,
+.stop-button {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+}
+
+.send-button svg,
+.stop-button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.send-button {
+  background: var(--gradient-accent);
+  color: var(--color-on-accent);
+}
+
+.send-button:disabled {
+  background: var(--color-border-strong);
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}
+
+.send-button:not(:disabled):hover {
+  /* โทนทองค่อนข้างสว่างอยู่แล้ว brightness > 1 จะยิ่งซีดจาง จึงใช้ค่าต่ำกว่า 1
+     เพื่อเข้มขึ้นเล็กน้อยแทน ให้เห็น feedback ชัดขึ้นตอน hover */
+  filter: brightness(0.94);
+}
+
+.send-button:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+.stop-button {
+  background: var(--color-danger);
+  color: white;
+}
+
+.stop-button:hover {
+  background: var(--color-danger-hover);
+}
+
+.stop-button:active {
+  transform: scale(0.94);
+}
+
+.stop-button.hidden,
+.send-button.hidden {
+  display: none;
+}
+
+/* ---------- จอที่ใหญ่ขึ้น (แท็บเล็ต/เดสก์ท็อป) ----------
+   เปลี่ยนจากเต็มจอเป็นการ์ดลอยกึ่งกลาง มีระยะขอบ + เงา ให้ความรู้สึกเหมือนหน้าต่าง
+   แอปแชทจริงมากกว่าเว็บฟอร์มเต็มความกว้างจอ */
+@media (min-width: 720px) {
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .app-container {
+    max-width: 760px;
+    height: min(860px, calc(100vh - 48px));
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-elevated);
+    overflow: hidden;
+  }
+
+  .new-chat-button span {
+    display: inline;
+  }
+
+  .message {
+    max-width: 78%;
+  }
+}
+
+/* ---------- ป้ายสถานะฐานความรู้ (RAG) ----------
+   วางไว้ใต้หัวข้อในแถบบน บอกผู้ใช้ตลอดเวลาว่าคำตอบที่จะได้มาจากเอกสารจริงหรือไม่
+   (Usability Heuristic: Visibility of System Status) */
+.rag-badge {
+  display: inline-block;
+  /* .app-header-text เป็น flex column ที่ยืดลูกเต็มความกว้าง ถ้าไม่บังคับ align-self
+     ป้ายจะยาวพาดทั้งแถบหัวแทนที่จะหุ้มพอดีข้อความ */
+  align-self: flex-start;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.6;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.rag-badge.on {
+  color: #2f5d3a;
+  background: rgba(47, 93, 58, 0.1);
+  border-color: rgba(47, 93, 58, 0.25);
+}
+
+.rag-badge.loading {
+  color: var(--color-text-muted);
+  background: var(--color-surface-alt);
+  border-color: var(--color-border);
+}
+
+.rag-badge.off {
+  color: var(--color-danger);
+  background: rgba(179, 38, 30, 0.08);
+  border-color: rgba(179, 38, 30, 0.22);
+}
+
+.rag-badge.hidden {
+  display: none;
+}
+
+/* ---------- กล่องแหล่งอ้างอิงใต้คำตอบ ----------
+   ใช้ <details> ของ HTML แทนการเขียน accordion เอง เพื่อให้ปุ่มกดเปิด/ปิดทำงานได้
+   ตั้งแต่ต้นและเข้าถึงด้วยคีย์บอร์ด/screen reader ได้โดยไม่ต้องเพิ่ม ARIA เอง
+   ปิดไว้เป็นค่าเริ่มต้น เพราะสิ่งที่ผู้ใช้อยากอ่านก่อนคือคำตอบ ไม่ใช่รายการเอกสาร */
+.sources {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.sources-summary {
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.sources-summary::-webkit-details-marker {
+  display: none;
+}
+
+.sources-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+}
+
+.sources[open] .sources-summary::before {
+  transform: rotate(90deg);
+}
+
+.sources-summary:hover {
+  color: var(--color-accent-hover);
+}
+
+.sources-list {
+  margin: 0;
+  padding: 0 12px 10px 30px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.source-item + .source-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.source-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.source-title {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.source-system {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  font-size: 0.68rem;
+}
+
+.source-score {
+  margin-left: auto;
+  color: var(--color-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.source-path {
+  margin-top: 2px;
+  color: var(--color-text-faint);
+  font-size: 0.7rem;
+  /* ชื่อไฟล์เป็น path ยาวๆ ไม่มีช่องว่าง ถ้าไม่บังคับตัดจะดันกล่องล้นออกนอกจอมือถือ */
+  word-break: break-all;
+}
+
+.source-excerpt {
+  margin: 4px 0 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}

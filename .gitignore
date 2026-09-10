@@ -1,0 +1,42 @@
+# ---------- ความลับ: ห้ามขึ้น git เด็ดขาด ----------
+# .env มีค่า API key ของผู้ให้บริการ LLM อยู่ ถ้าหลุดขึ้น GitHub ต่อให้เป็น repo แบบ
+# private ก็ควรถือว่าคีย์นั้นรั่วแล้วและต้องออกใหม่ ใช้ .env.example เป็นตัวอย่างแทน
+.env
+.env.*
+!.env.example
+
+# ---------- Python ----------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- ดัชนี RAG ----------
+# สร้างใหม่ได้เสมอด้วย `python scripts/build_index.py` และมีขนาดใหญ่ (embeddings.npy
+# เป็นเมทริกซ์ float32 ขนาดหลายสิบ MB) git ไม่เหมาะกับไฟล์ไบนารีที่เปลี่ยนทั้งก้อนทุกครั้ง
+rag_index/
+
+# ---------- ฐานความรู้: เอกสารภายในองค์กร ----------
+# คู่มือการใช้งานระบบงานจริงเป็นข้อมูลภายใน ไม่ควรอยู่บน GitHub
+knowledge_base/
+*.pdf
+*.docx
+*.xlsx
+*.msg
+
+# ---------- ระบบปฏิบัติการ / เครื่องมือ ----------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---------- อื่นๆ ----------
+_to_delete/
+*.log
