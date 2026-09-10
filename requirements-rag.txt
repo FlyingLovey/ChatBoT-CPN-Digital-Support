@@ -1,0 +1,24 @@
+# แพ็กเกจครบชุดสำหรับรันโหมด RAG ในเครื่อง (ครอบคลุมของ requirements.txt ด้วย)
+#     pip install -r requirements-rag.txt
+#
+# เวอร์ชันชุดเดียวกับที่ใช้ในการทดลองของสารนิพนธ์
+# (Model AI/lm_studio_eval/requirements.txt) เพื่อให้ผลการค้นคืนตรงกับที่รายงานไว้
+#
+# หมายเหตุเรื่อง torch: ถ้าจะรัน LM Studio ไปพร้อมกัน แนะนำให้ลง torch แบบ CPU ก่อน
+# ด้วยคำสั่งนี้ แล้วค่อยติดตั้งไฟล์นี้ตาม จะได้ไม่แย่ง VRAM กับโมเดลที่โหลดไว้
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+
+sentence-transformers>=3.0.0   # โหลด multilingual-e5-base และ bge-reranker-v2-m3
+rank-bm25>=0.2.2               # BM25 สำหรับ hybrid search
+numpy>=1.26.0                  # เก็บ/คำนวณเวกเตอร์ของดัชนี
+torch>=2.2.0                   # backend ของ sentence-transformers
+
+# --- อ่านไฟล์เอกสารในฐานความรู้ (ใช้เฉพาะตอนรัน scripts/build_index.py) ---
+# ฐานความรู้เป็นเอกสารจริงหลายรูปแบบ (PDF 105, Word 29, Excel 5, .txt 4 และอีเมล .msg)
+# สคริปต์ตัด chunk จะ import ไลบรารีตามชนิดไฟล์ที่เจอ ถ้าขาดตัวใดตัวหนึ่งจะหยุดทันที
+# เวอร์ชันชุดเดียวกับ Model AI/lm_studio_eval/requirements.txt
+pypdf>=4.0          # อ่าน PDF
+python-docx>=1.1    # อ่าน Word (.docx)
+openpyxl>=3.1       # อ่าน Excel (.xlsx)
+extract-msg>=0.45   # อ่านอีเมล Outlook (.msg)
