@@ -117,7 +117,11 @@ class RagService:
                 f"ไม่พบดัชนีที่ {self.index_dir} — รัน `python scripts/build_index.py` ก่อน")
 
         self.meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
-        self.chunks = [json.loads(line) for line in chunks_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        # ต้องแยกด้วย "\n" เท่านั้น ห้ามใช้ str.splitlines() เพราะมันตัดบรรทัดที่อักขระ
+        # Unicode อื่นด้วย (U+2028 LINE SEPARATOR, U+2029, U+0085) ซึ่ง json.dumps ไม่ได้
+        # escape ให้ เอกสารที่สกัดจาก PDF/DOCX มีอักขระพวกนี้ปนมาจริง ผลคือเรคคอร์ดถูก
+        # ผ่าครึ่งกลางสตริงแล้วพังด้วย JSONDecodeError: Unterminated string
+        self.chunks = [json.loads(line) for line in chunks_path.read_text(encoding="utf-8").split("\n") if line.strip()]
         self._embeddings = np.load(emb_path)
         if len(self.chunks) != len(self._embeddings):
             raise ValueError(

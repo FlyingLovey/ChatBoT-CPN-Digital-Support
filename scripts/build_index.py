@@ -31,9 +31,15 @@ def load_eval_module(path: Path):
     """โหลด rag_eval_lmstudio.py เข้ามาเป็นโมดูล
 
     สคริปต์นั้น import httpx ไว้ตั้งแต่ต้นไฟล์เพื่อใช้คุยกับ LM Studio ซึ่งขั้นตอนสร้างดัชนี
-    ไม่ได้ใช้เลย จึงใส่โมดูลหลอกแทนไว้ก่อน เพื่อไม่บังคับให้เครื่องที่สร้างดัชนีต้องติดตั้ง httpx
+    ไม่ได้ใช้เลย ถ้าเครื่องไหนไม่มี httpx ติดตั้งไว้ จึงใส่โมดูลหลอกแทนให้ import ผ่านไปได้
+
+    สำคัญ: ต้องลอง import ของจริงก่อนเสมอ ห้ามยัด stub ทับไปดื้อๆ เพราะ huggingface_hub
+    (ที่ sentence-transformers เรียกใช้ต่อ) ต้องการ httpx ตัวจริงในขั้นตอน [3/4] ถ้า stub
+    ค้างอยู่ใน sys.modules จะพังด้วย ImportError: cannot import name 'HTTPError' from 'httpx'
     """
-    if "httpx" not in sys.modules:
+    try:
+        import httpx  # noqa: F401 - ใช้ของจริงถ้ามี
+    except ImportError:
         stub = types.ModuleType("httpx")
 
         class _Timeout:  # noqa: D401 - แทนที่ httpx.Timeout ที่ถูกเรียกตอน import
@@ -92,8 +98,12 @@ def main() -> None:
     np.save(args.out / "embeddings.npy", embeddings)
     with open(args.out / "chunks.jsonl", "w", encoding="utf-8") as f:
         for c in chunks:
-            f.write(json.dumps({"doc_id": c.doc_id, "heading": c.heading,
-                                "text": c.text, "system": c.system}, ensure_ascii=False) + "\n")
+            line = json.dumps({"doc_id": c.doc_id, "heading": c.heading,
+                               "text": c.text, "system": c.system}, ensure_ascii=False)
+            # json.dumps ไม่ escape U+2028/U+2029 ให้ แต่เครื่องมือที่อ่านไฟล์ทีละบรรทัด
+            # (รวมถึง str.splitlines() ของ Python และ JSON.parse ของ JavaScript รุ่นเก่า)
+            # นับสองตัวนี้เป็นการขึ้นบรรทัดใหม่ ทำให้เรคคอร์ดถูกผ่าครึ่ง จึง escape เองให้ชัด
+            f.write(line.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029") + "\n")
     meta = {
         "embedding_model": rag.EMBEDDING_MODEL_NAME,
         "reranker_model": rag.RERANKER_MODEL_NAME,
