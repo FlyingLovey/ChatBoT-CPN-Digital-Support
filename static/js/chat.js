@@ -9,6 +9,7 @@ const stopButton = document.getElementById("stop-button");
 const newChatButton = document.getElementById("new-chat-button");
 const modeButtons = Array.from(document.querySelectorAll(".mode-option"));
 const modelSelect = document.getElementById("model-select");
+const systemSelect = document.getElementById("system-select");
 
 // เก็บ AbortController ของ request ที่กำลังทำงานอยู่ ไว้ให้ปุ่ม "หยุด" เรียกยกเลิกได้
 // (นี่คือส่วนที่เติมให้ตรงกับ Usability Heuristic "User Control & Freedom" ที่สอนในสไลด์)
@@ -186,17 +187,21 @@ async function loadRagStatus() {
         `top-k: ${data.top_k}`,
         `prompt: ${data.prompt_variant}`,
       ].join(" · ");
-    } else {
+    } else if (data.loading) {
+      // กำลังโหลดอยู่ ต้องเช็คก่อน error เสมอ เพราะ error อาจเป็นค่าค้างจากรอบก่อน
+      // ครั้งแรกสุดต้องโหลด reranker ~2.4 GB จาก Hugging Face ใช้เวลาหลายนาที
       badge.textContent = "กำลังโหลดฐานความรู้...";
       badge.className = "rag-badge loading";
-      if (data.error) {
-        badge.textContent = "โหลดฐานความรู้ไม่สำเร็จ";
-        badge.className = "rag-badge off";
-        badge.title = data.error;
-      } else {
-        // ยังโหลดอยู่ในเธรดพื้นหลัง ถามซ้ำอีกรอบในอีก 5 วินาที
-        setTimeout(loadRagStatus, 5000);
-      }
+      badge.title = "ครั้งแรกต้องดาวน์โหลดโมเดลก่อน อาจใช้เวลาหลายนาที";
+      setTimeout(loadRagStatus, 5000);
+    } else if (data.error) {
+      badge.textContent = "โหลดฐานความรู้ไม่สำเร็จ";
+      badge.className = "rag-badge off";
+      badge.title = data.error;
+    } else {
+      badge.textContent = "กำลังเริ่มโหลดฐานความรู้...";
+      badge.className = "rag-badge loading";
+      setTimeout(loadRagStatus, 5000);
     }
   } catch (err) {
     console.warn("[chat] อ่านสถานะ RAG ไม่ได้:", err);
@@ -345,6 +350,79 @@ modelSelect.addEventListener("change", () => {
   }
 });
 
+// ---------- ตัวเลือกระบบงาน ----------
+// ผู้ใช้ระบุเองได้ว่ากำลังถามเรื่องระบบไหน แทนที่จะให้ระบบเดาจากข้อความคำถามอย่างเดียว
+// สำคัญกับคำถามสั้นๆ อย่าง "ลืมรหัสผ่านทำยังไง" ที่ไม่มีชื่อระบบอยู่ในประโยคเลย
+// ถ้าปล่อยให้เดา จะไปค้นทั้ง 17 ระบบแล้วมีสิทธิ์ได้ขั้นตอนของระบบอื่นมาตอบ
+const SYSTEM_STORAGE_KEY = "chatbot.rag.system";
+
+function currentSystem() {
+  return systemSelect && systemSelect.value ? systemSelect.value : null;
+}
+
+function markSystemSelect() {
+  if (systemSelect) systemSelect.classList.toggle("active", Boolean(systemSelect.value));
+}
+
+function setSystemPlaceholder(text) {
+  systemSelect.innerHTML = "";
+  const opt = document.createElement("option");
+  opt.value = "";
+  opt.textContent = text;
+  systemSelect.appendChild(opt);
+  systemSelect.disabled = true;
+}
+
+async function loadSystems() {
+  if (!systemSelect) return;
+  let data;
+  try {
+    data = await (await fetch("/api/v1/systems")).json();
+  } catch (err) {
+    console.warn("[chat] ดึงรายชื่อระบบงานไม่ได้:", err);
+    return;
+  }
+
+  // ฐานความรู้ยังโหลดไม่เสร็จ — บอกให้เห็นว่ากำลังรออยู่ แล้วถามซ้ำ ไม่ปล่อยให้ช่อง
+  // ดูเทาๆ เฉยๆ จนผู้ใช้คิดว่ากดไม่ได้เพราะพัง
+  if (data.loading) {
+    setSystemPlaceholder("กำลังโหลดรายชื่อระบบงาน...");
+    setTimeout(loadSystems, 5000);
+    return;
+  }
+  if (!Array.isArray(data.systems) || data.systems.length === 0) {
+    setSystemPlaceholder("ไม่มีฐานความรู้ (ถามได้ทุกเรื่อง)");
+    return;
+  }
+
+  // สร้างรายการใหม่ทั้งหมดทุกครั้ง กันตัวเลือกซ้ำเมื่อถูกเรียกซ้ำจากการ retry
+  const remembered = readStored(SYSTEM_STORAGE_KEY);
+  systemSelect.innerHTML = "";
+  const allOpt = document.createElement("option");
+  allOpt.value = "";
+  allOpt.textContent = "ทุกระบบ (ให้ระบบเดาจากคำถาม)";
+  systemSelect.appendChild(allOpt);
+  for (const s of data.systems) {
+    const opt = document.createElement("option");
+    opt.value = s.name;
+    // บอกจำนวนเอกสารต่อท้าย ผู้ใช้จะได้พอเดาได้ว่าระบบไหนมีข้อมูลเยอะแค่ไหน
+    opt.textContent = `${s.name} (${s.n_chunks})`;
+    systemSelect.appendChild(opt);
+  }
+  systemSelect.disabled = false;
+  if (remembered && data.systems.some((s) => s.name === remembered)) {
+    systemSelect.value = remembered;
+  }
+  markSystemSelect();
+}
+
+if (systemSelect) {
+  systemSelect.addEventListener("change", () => {
+    writeStored(SYSTEM_STORAGE_KEY, systemSelect.value);
+    markSystemSelect();
+  });
+}
+
 function scrollToBottom() {
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
@@ -392,7 +470,12 @@ async function sendMessage(message) {
     const response = await fetch("/api/v1/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, mode: currentMode, model: currentModel() }),
+      body: JSON.stringify({
+        message,
+        mode: currentMode,
+        model: currentModel(),
+        system: currentSystem(),
+      }),
       signal: activeAbortController.signal,
     });
 
@@ -512,3 +595,4 @@ newChatButton.addEventListener("click", () => {
 
 loadRagStatus();
 initModelPicker();
+loadSystems();

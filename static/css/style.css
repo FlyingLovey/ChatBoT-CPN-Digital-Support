@@ -763,3 +763,73 @@ body {
   line-height: 1.55;
   white-space: pre-wrap;
 }
+
+
+/* ---------- แถบเลือกระบบงาน ----------
+   วางไว้ติดกับช่องพิมพ์ ไม่ใช่บนหัว เพราะมันเป็นบริบทของ "คำถาม" ไม่ใช่การตั้งค่าแอป
+   ผู้ใช้จะเห็นตอนกำลังจะพิมพ์พอดี */
+.system-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px var(--space-md) 0;
+  background: var(--color-surface);
+}
+
+.system-label {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.system-select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 380px;
+  /* ปุ่มต้องสูงอย่างน้อย 44px ตามเกณฑ์ขนาดเป้าสัมผัสของ WCAG ไม่งั้นกดพลาดง่าย
+     โดยเฉพาะบนจอสัมผัสและกับผู้ใช้ที่มือไม่นิ่ง */
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.system-select:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.system-select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* เมื่อเลือกระบบเจาะจงแล้ว ทำให้เห็นชัดว่ากำลังจำกัดขอบเขตการค้นอยู่ */
+.system-select.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  font-weight: 500;
+}
+
+.system-select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.system-hint {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+/* จอแคบ ข้อความใบ้กินที่เปล่าๆ ซ่อนไปเลย ตัว dropdown อธิบายตัวเองอยู่แล้ว */
+@media (max-width: 560px) {
+  .system-hint { display: none; }
+  .system-select { max-width: none; }
+}

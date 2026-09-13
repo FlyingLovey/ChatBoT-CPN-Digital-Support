@@ -1,9 +1,9 @@
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -30,14 +30,12 @@ async def lifespan(_app: FastAPI):
     ในครั้งแรกที่ยังไม่มีไฟล์โมเดลในเครื่อง) ถ้าโหลดไม่สำเร็จ RagService จะเก็บสาเหตุไว้
     ใน last_error เอง แล้วแชทบอทจะทำงานต่อโดยไม่ใช้ฐานความรู้"""
     if settings.RAG_ENABLED and settings.RAG_PRELOAD:
-        threading.Thread(
-            target=rag_service.get_service().load, name="rag-preload", daemon=True
-        ).start()
+        rag_service.get_service().ensure_loading()
     yield
 
 
 app = FastAPI(
-    title="IT Support Chatbot (RAG)",
+    title="Digital Support Chatbot (RAG)",
     description="แชทบอทสนับสนุนงานไอทีด้วย LLM และ Retrieval-Augmented Generation",
     version="0.2.0",
     lifespan=lifespan,
@@ -60,9 +58,41 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 app.include_router(chat_router)
 
 
+def _static_version() -> str:
+    """เลขเวอร์ชันของไฟล์หน้าบ้าน คำนวณจากเวลาแก้ไขล่าสุดของ css/js
+
+    เอาไปต่อท้าย URL เป็น ?v=... เพื่อบังคับให้เบราว์เซอร์โหลดไฟล์ใหม่เมื่อมีการแก้โค้ด
+    ถ้าไม่ทำ ผู้ใช้จะยังได้ไฟล์เก่าจากแคชแม้เซิร์ฟเวอร์อัปเดตแล้ว ซึ่งทำให้ฟีเจอร์ใหม่
+    ไม่ทำงานโดยไม่มีสัญญาณอะไรบอกเลย (ต้องกด Ctrl+Shift+R เองถึงจะหาย)
+    """
+    try:
+        newest = max(
+            p.stat().st_mtime
+            for pattern in ("css/*.css", "js/*.js")
+            for p in (BASE_DIR / "static").glob(pattern)
+        )
+        return str(int(newest))
+    except ValueError:
+        return "0"
+
+
 @app.get("/")
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return templates.TemplateResponse(
+        request, "index.html", {"static_v": _static_version()}
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """เบราว์เซอร์ขอ /favicon.ico เองทุกครั้งที่เปิดหน้า ถ้าไม่มีไฟล์จะได้ 404
+    รกอยู่ใน log ตลอด แม้จะไม่กระทบการทำงานก็ตาม"""
+    return FileResponse(
+        BASE_DIR / "static" / "img" / "favicon.ico",
+        media_type="image/x-icon",
+        # แคชไว้ 1 วัน ไอคอนแทบไม่เปลี่ยน ไม่ต้องขอซ้ำทุกครั้งที่เปิดหน้า
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/health")

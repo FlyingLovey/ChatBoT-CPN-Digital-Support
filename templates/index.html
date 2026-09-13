@@ -3,14 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>IT Support Chatbot (RAG)</title>
+    <title>Digital Support Chatbot (RAG)</title>
+    <link rel="icon" href="/static/img/favicon.ico?v={{ static_v }}" sizes="any" />
+    <link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v={{ static_v }}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/css/style.css" />
+    <link rel="stylesheet" href="/static/css/style.css?v={{ static_v }}" />
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
   </head>
@@ -32,7 +34,7 @@
         <div class="app-header-brand">
           <img class="app-logo" src="/static/img/central-pattana-logo.png" alt="Central Pattana" />
           <div class="app-header-text">
-            <h1>IT Support Chatbot</h1>
+            <h1>Digital Support Chatbot</h1>
             <span class="app-subtitle">ถามปัญหาการใช้งานระบบงาน ระบบจะค้นหาคำตอบจากคู่มือก่อนตอบ</span>
             <span id="rag-badge" class="rag-badge loading">กำลังโหลดฐานความรู้...</span>
           </div>
@@ -68,6 +70,14 @@
 
       <div id="error-banner" class="error-banner hidden"></div>
 
+      <div class="system-bar">
+        <label class="system-label" for="system-select">ระบบงาน</label>
+        <select id="system-select" class="system-select">
+          <option value="">ทุกระบบ (ให้ระบบเดาจากคำถาม)</option>
+        </select>
+        <span class="system-hint">เลือกระบบที่กำลังใช้งาน จะค้นได้ตรงกว่า</span>
+      </div>
+
       <form id="chat-form" class="chat-form">
         <input
           id="message-input"
@@ -90,6 +100,6 @@
       </form>
     </div>
 
-    <script src="/static/js/chat.js"></script>
+    <script src="/static/js/chat.js?v={{ static_v }}"></script>
   </body>
 </html>

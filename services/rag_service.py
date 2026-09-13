@@ -93,6 +93,9 @@ class RagService:
         with self._lock:
             if self._ready:
                 return True
+            # ล้างผลรอบก่อนทิ้งก่อนเริ่มใหม่ ไม่งั้นระหว่างที่กำลังโหลดรอบใหม่อยู่
+            # หน้าเว็บจะไปหยิบ error เก่ามาแสดงเป็นสีแดง ทั้งที่ยังไม่รู้ผลรอบนี้
+            self.last_error = None
             try:
                 self._load_unlocked()
                 self._ready = True
@@ -201,14 +204,30 @@ class RagService:
                 return name
         return None
 
-    def search(self, query: str, top_k: int = 5) -> list[RetrievedChunk]:
+    def systems(self) -> list[dict[str, Any]]:
+        """รายชื่อระบบงานพร้อมจำนวน chunk ให้หน้าเว็บเอาไปทำตัวเลือก"""
+        counts: dict[str, int] = {}
+        for c in self.chunks:
+            if c.get("system"):
+                counts[c["system"]] = counts.get(c["system"], 0) + 1
+        return [{"name": n, "n_chunks": counts[n]} for n in sorted(counts)]
+
+    def search(self, query: str, top_k: int = 5,
+               system: str | None = None) -> list[RetrievedChunk]:
+        """ค้นคืน chunk ที่เกี่ยวข้องที่สุด
+
+        system: ระบบงานที่ผู้ใช้เลือกเองจากหน้าเว็บ ถ้าส่งมาจะใช้ค่านี้เลย ไม่ต้องเดา
+        จากข้อความคำถาม — กันกรณีผู้ใช้ถามสั้นๆ ว่า "ลืมรหัสผ่านทำยังไง" โดยไม่ระบุ
+        ระบบ ซึ่งตัวตรวจจับอัตโนมัติจะจับไม่ได้ แล้วไปค้นทั้ง 17 ระบบจนได้คำตอบผิดระบบ
+        ถ้าไม่ส่งมา (None) จะถอยไปใช้การตรวจจับจากข้อความเหมือนเดิม
+        """
         if not self._ready and not self.load():
             return []
         import numpy as np
 
         candidate_idx = list(range(len(self.chunks)))
         if self.use_metadata_filter and self.known_systems:
-            target = self.detect_system(query)
+            target = system if system in self.known_systems else self.detect_system(query)
             if target:
                 filtered = [i for i in candidate_idx if self.chunks[i].get("system") == target]
                 # ถ้ากรองแล้วไม่เหลืออะไรเลย ให้ถอยกลับไปค้นทั้งหมด กัน false positive

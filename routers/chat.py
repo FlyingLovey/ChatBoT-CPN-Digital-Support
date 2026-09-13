@@ -60,7 +60,8 @@ def _retrieval_query(history: list[dict[str, str]], message: str) -> str:
     return message
 
 
-async def _retrieve(history: list[dict[str, str]], message: str):
+async def _retrieve(history: list[dict[str, str]], message: str,
+                    system: str | None = None):
     """ค้นคืนบริบทแล้วประกอบ system prompt คืน (system_prompt, sources)
 
     ถ้าปิด RAG ไว้ หรือดัชนียังไม่พร้อม หรือค้นแล้วไม่เจออะไรเลย จะคืน (None, []) ซึ่งฝั่ง
@@ -73,7 +74,7 @@ async def _retrieve(history: list[dict[str, str]], message: str):
         # search() เป็นงานหนักฝั่ง CPU (encode + rerank) และเป็นโค้ด sync ถ้าเรียกตรงๆ
         # จะบล็อก event loop ทำให้คำขออื่นค้างทั้งเซิร์ฟเวอร์ จึงโยนไปรันในเธรดแยก
         chunks = await asyncio.to_thread(
-            service.search, _retrieval_query(history, message), settings.RAG_TOP_K
+            service.search, _retrieval_query(history, message), settings.RAG_TOP_K, system
         )
     except Exception:  # noqa: BLE001 - RAG ล้มไม่ควรทำให้ตอบคำถามไม่ได้
         logger.exception("ค้นคืนเอกสารล้มเหลว — จะตอบโดยไม่ใช้ฐานความรู้")
@@ -93,6 +94,8 @@ class ChatRequest(BaseModel):
     # เปรียบเทียบกันได้ — ซึ่งเป็นสิ่งที่ต้องใช้ตอนสาธิตเทียบ 4 โมเดลในสารนิพนธ์
     mode: str | None = None
     model: str | None = None
+    # ระบบงานที่ผู้ใช้เลือกจาก dropdown — ว่าง/None = ให้ระบบเดาเองจากข้อความคำถาม
+    system: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -136,6 +139,19 @@ async def get_rag_status():
     return status
 
 
+@router.get("/systems")
+async def get_systems():
+    """รายชื่อระบบงานในฐานความรู้ ให้หน้าเว็บทำเป็นตัวเลือกให้ผู้ใช้ระบุเองได้
+    ว่ากำลังถามเรื่องระบบไหน แทนที่จะให้ระบบเดาจากข้อความคำถามอย่างเดียว"""
+    if not settings.RAG_ENABLED:
+        return {"systems": []}
+    service = rag_service.get_service()
+    if not service.is_ready():
+        service.ensure_loading()
+        return {"systems": [], "loading": True}
+    return {"systems": service.systems()}
+
+
 @router.post("/chat/reset")
 async def post_chat_reset(request: Request, response: Response):
     """ล้างประวัติบทสนทนาของ session นี้ โดยไม่ออก session_id ใหม่ — เบื้องหลังปุ่ม
@@ -155,7 +171,7 @@ async def post_chat(chat_request: ChatRequest, request: Request, response: Respo
         _set_session_cookie(response, session_id)
     history = conversation_store.get(session_id, [])
 
-    system_prompt, sources = await _retrieve(history, chat_request.message)
+    system_prompt, sources = await _retrieve(history, chat_request.message, chat_request.system)
 
     try:
         reply_text = await llm_client.chat(
@@ -185,7 +201,9 @@ async def post_chat_stream(chat_request: ChatRequest, request: Request):
         received_done = False
         accumulated_text = ""
         try:
-            system_prompt, sources = await _retrieve(history, chat_request.message)
+            system_prompt, sources = await _retrieve(
+                history, chat_request.message, chat_request.system
+            )
             # ส่งรายการแหล่งอ้างอิงออกไปก่อนตัวคำตอบ หน้าเว็บจะได้ขึ้นให้เห็นทันที
             # ว่ากำลังตอบจากเอกสารฉบับไหน ไม่ต้องรอจนสตรีมจบ
             yield f"data: {json.dumps({'sources': sources}, ensure_ascii=False)}\n\n"
