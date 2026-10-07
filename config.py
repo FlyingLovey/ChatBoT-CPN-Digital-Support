@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -68,6 +69,43 @@ class Settings(BaseSettings):
     # services/rag_service.py แทน เพราะต้องแทรกบริบทที่ค้นคืนมาเข้าไปด้วย
     SYSTEM_PROMPT: str = "คุณคือผู้ช่วย AI ที่เป็นมิตรและตอบเป็นภาษาไทย"
 
+    # ---------------------------------------------------------- ฐานข้อมูล ---
+    # เก็บประวัติคำถาม-คำตอบไว้วิเคราะห์ย้อนหลัง และให้บทสนทนาไม่หายเมื่อรีสตาร์ท
+    DB_ENABLED: bool = True
+
+    # เว้นว่าง = ประกอบ URL ของ PostgreSQL จากค่า POSTGRES_* ด้านล่างให้อัตโนมัติ
+    # ตั้งค่านี้โดยตรงก็ได้ถ้าต้องการระบุทั้งเส้น (เช่นต้องใส่พารามิเตอร์พิเศษ) เช่น
+    #   postgresql+psycopg://user:pass@host:5432/dbname?sslmode=require
+    #   sqlite:///D:/path/to/chatbot.db      ← ใช้ตอนทดสอบเร็วๆ โดยไม่ต้องมี PostgreSQL
+    # ค่านี้มีลำดับความสำคัญสูงกว่า POSTGRES_* เสมอ
+    DATABASE_URL: str = ""
+
+    # ค่าเชื่อมต่อ PostgreSQL แบบแยกฟิลด์ — แยกไว้เพื่อไม่ต้องเอารหัสผ่านไปต่อเป็น
+    # สตริงเดียวเอง (อักขระอย่าง @ : / ในรหัสผ่านต้อง encode ถ้าเขียนรวมใน URL)
+    # โค้ดจะ quote ให้เองตอนประกอบ URL
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "chatbot"
+    POSTGRES_USER: str = "chatbot"
+    POSTGRES_PASSWORD: str = ""
+    # disable = ต่อในเครื่องเดียวกัน, require = ผ่านเครือข่ายองค์กร
+    POSTGRES_SSLMODE: str = "disable"
+
+    # ---- connection pool ----
+    # แอปเขียนประวัติจากเธรดพื้นหลังของ FastAPI พร้อมกันได้หลายเธรด ต่างจาก SQLite
+    # ที่เปิดไฟล์เดียว PostgreSQL เปิดเป็น connection จริงต่อหนึ่งตัว จึงต้องจำกัดจำนวน
+    # ไม่ให้กินโควตา max_connections ของเซิร์ฟเวอร์ (ค่าเริ่มต้นของ PostgreSQL คือ 100)
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    # รีไซเคิล connection ก่อนที่ไฟร์วอลล์หรือ PostgreSQL จะตัดทิ้งเอง (วินาที)
+    DB_POOL_RECYCLE: int = 1800
+    # ถ้าเซิร์ฟเวอร์ไม่ตอบภายในกี่วินาทีให้เลิกรอ — กันไม่ให้คำตอบของผู้ใช้ค้าง
+    DB_CONNECT_TIMEOUT: int = 5
+
+    # จำนวนรอบถาม-ตอบย้อนหลังที่ดึงกลับมาเป็นบริบท เมื่อผู้ใช้ถือ cookie เดิมกลับมา
+    # หลังแอปรีสตาร์ท มากไปจะทำให้ prompt ยาวและช้าโดยไม่จำเป็น
+    DB_HISTORY_TURNS: int = 10
+
     # ---------------------------------------------------------------- RAG ---
     # เปิด/ปิดการค้นคืนเอกสารก่อนตอบ ปิดไว้แล้วแอปจะกลายเป็นแชทบอททั่วไปที่คุยกับ
     # โมเดลตรงๆ ใช้เทียบผลระหว่าง "มี RAG" กับ "ไม่มี RAG" ตอนสาธิตได้
@@ -89,6 +127,18 @@ class Settings(BaseSettings):
     # "strict" = เทมเพลตเดิมจากการทดลองที่ 1–3 (ไม่ครบก็ปฏิเสธตอบ)
     RAG_PROMPT_VARIANT: str = "graded"
 
+    # ------------------------------------------- ชั้นตรวจก่อน-หลังตอบ ---
+    # ตรวจคำถามและคำตอบด้วยกฎที่กำหนดแน่นอน ทำงานในเครื่องทั้งหมด ไม่เรียกโมเดลและ
+    # ไม่ต่อเน็ต จึงไม่เพิ่มเวลาตอบและไม่ขัดกับข้อกำหนดที่ว่าเอกสารภายในต้องไม่ออกนอกองค์กร
+    GUARD_ENABLED: bool = True
+
+    # ไฟล์คำต้องห้ามของชั้นที่ 1 แก้ไฟล์แล้วมีผลทันทีโดยไม่ต้องรีสตาร์ท
+    GUARD_BLOCKLIST_PATH: Path = BASE_DIR / "guard_blocklist.txt"
+
+    # ตรวจฝั่งคำตอบด้วยหรือไม่ (เทียบอีเมล/เบอร์โทรในคำตอบกับบริบทที่ค้นคืนมา)
+    # มีผลเฉพาะโหมดตอบแบบไม่สตรีม เพราะโหมดสตรีมส่งข้อความออกไปทีละส่วนแล้ว
+    GUARD_CHECK_OUTPUT: bool = True
+
     # โหลดดัชนีและโมเดลตั้งแต่ตอนเปิดแอป (ทำในเธรดพื้นหลัง ไม่บล็อกการเปิดหน้าเว็บ)
     # ปิดไว้ก็ได้ ระบบจะไปโหลดเอาตอนมีคำถามแรกเข้ามาแทน แต่คำถามแรกจะช้า
     RAG_PRELOAD: bool = True
@@ -104,6 +154,23 @@ class Settings(BaseSettings):
             object.__setattr__(self, "ONLINE_API_KEY", self.LLM_API_KEY)
             object.__setattr__(self, "ONLINE_MODEL", self.LLM_MODEL)
         return self
+
+    @property
+    def database_url(self) -> str:
+        """URL ที่ใช้จริง — ถ้าไม่ได้ตั้ง DATABASE_URL จะประกอบจากค่า POSTGRES_* ให้
+
+        แยกรหัสผ่านออกมาเป็นฟิลด์ของตัวเองแล้ว quote ตรงนี้ เพราะรหัสผ่านที่มี @ : / #
+        ปนอยู่จะทำให้ URL ถูกแยกส่วนผิดและ error เป็น "could not translate host name"
+        ซึ่งอ่านแล้วนึกไม่ถึงว่าสาเหตุอยู่ที่รหัสผ่าน
+        """
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        user = quote_plus(self.POSTGRES_USER)
+        pwd = f":{quote_plus(self.POSTGRES_PASSWORD)}" if self.POSTGRES_PASSWORD else ""
+        return (
+            f"postgresql+psycopg://{user}{pwd}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
 
     @property
     def providers(self) -> dict[str, Provider]:

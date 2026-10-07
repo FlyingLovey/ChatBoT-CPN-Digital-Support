@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 
 from config import settings
 from routers.chat import router as chat_router
-from services import rag_service
+from services import db, guard, rag_service
 
 # หาโฟลเดอร์ static/templates จาก path ของไฟล์นี้เอง แทนที่จะพึ่ง current working
 # directory ตอนรัน เพราะบน serverless (เช่น Vercel) ไม่การันตีว่า process จะเริ่ม
@@ -29,6 +29,22 @@ async def lifespan(_app: FastAPI):
     หน้าเว็บเปิดไม่ได้ระหว่างรอ (โหลด embedding model + reranker ใช้เวลาหลายสิบวินาที
     ในครั้งแรกที่ยังไม่มีไฟล์โมเดลในเครื่อง) ถ้าโหลดไม่สำเร็จ RagService จะเก็บสาเหตุไว้
     ใน last_error เอง แล้วแชทบอทจะทำงานต่อโดยไม่ใช้ฐานความรู้"""
+    # เปิดฐานข้อมูลก่อน เพราะ router ต้องใช้ตั้งแต่คำถามแรก และเปิดเร็ว (สร้างตารางอย่างเดียว)
+    if settings.DB_ENABLED:
+        db.init_db(
+            settings.database_url,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_MAX_OVERFLOW,
+            pool_recycle=settings.DB_POOL_RECYCLE,
+            connect_timeout=settings.DB_CONNECT_TIMEOUT,
+            sslmode=settings.POSTGRES_SSLMODE or None,
+        )
+
+    # โหลดรายการคำต้องห้ามของชั้นตรวจ (ไฟล์เล็ก อ่านครั้งเดียวตอนเปิดแอป และชั้นตรวจ
+    # จะโหลดใหม่เองเมื่อไฟล์ถูกแก้ ระหว่างที่เซิร์ฟเวอร์ยังทำงานอยู่)
+    if settings.GUARD_ENABLED:
+        guard.load_blocklist(settings.GUARD_BLOCKLIST_PATH)
+
     if settings.RAG_ENABLED and settings.RAG_PRELOAD:
         rag_service.get_service().ensure_loading()
     yield
@@ -102,4 +118,5 @@ async def health():
     return {
         "status": "ok",
         "rag": settings.RAG_ENABLED and rag_service.get_service().is_ready(),
+        "db": settings.DB_ENABLED and db.is_ready(),
     }

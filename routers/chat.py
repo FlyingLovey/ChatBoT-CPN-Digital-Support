@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Request, Response
@@ -8,7 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from config import settings
-from services import llm_client, rag_service
+from services import db, guard, llm_client, rag_service
 from services.llm_client import LLMConnectionError
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,23 @@ FOLLOWUP_QUERY_MAX_CHARS = 40
 
 
 def _ensure_session(session_id: str | None) -> tuple[str, bool]:
-    """คืนค่า (session_id, is_new) ถ้าเป็น session ใหม่จะสร้างประวัติบทสนทนาว่างให้ด้วย"""
+    """คืนค่า (session_id, is_new)
+
+    ถ้า cookie ชี้ไปยัง session ที่ไม่มีในหน่วยความจำแล้ว (แอปเพิ่งรีสตาร์ท) จะลองกู้
+    บทสนทนากลับจากฐานข้อมูลก่อน แทนที่จะออก session ใหม่ให้ทันที — ผู้ใช้จะได้คุยต่อ
+    จากเดิมได้เหมือนไม่มีอะไรเกิดขึ้น
+    """
     if session_id and session_id in conversation_store:
         return session_id, False
+
+    if session_id and settings.DB_ENABLED and db.is_ready():
+        restored = db.load_history(session_id, settings.DB_HISTORY_TURNS)
+        if restored:
+            conversation_store[session_id] = restored
+            logger.info("กู้บทสนทนาจากฐานข้อมูล session=%s (%d ข้อความ)",
+                        session_id, len(restored))
+            return session_id, False
+
     new_id = str(uuid.uuid4())
     conversation_store[new_id] = []
     return new_id, True
@@ -85,6 +100,56 @@ async def _retrieve(history: list[dict[str, str]], message: str,
         message, chunks, settings.RAG_PROMPT_VARIANT
     )
     return system_prompt, rag_service.sources_payload(chunks)
+
+
+def _effective_system(sources: list[dict]) -> str | None:
+    """ระบบงานที่ถูกใช้กรองจริง — ถ้าทุกแหล่งอ้างอิงมาจากระบบเดียวกัน แปลว่าตัวกรองทำงาน
+    อ่านจากผลลัพธ์แทนที่จะคำนวณซ้ำ จะได้ไม่มีตรรกะสองชุดที่หลุดจากกันได้"""
+    systems = {s.get("system") for s in sources if s.get("system")}
+    return systems.pop() if len(systems) == 1 else None
+
+
+async def _log_turn(*, session_id: str, request_obj: "ChatRequest", answer: str,
+                    sources: list[dict], started: float, error: str | None = None) -> None:
+    """บันทึกรอบถาม-ตอบลงฐานข้อมูลในเธรดแยก
+
+    ห้ามให้ขั้นตอนนี้ทำให้คำตอบช้าลงหรือพัง — db.log_interaction จับ exception เองแล้ว
+    และเรียกผ่าน to_thread เพื่อไม่บล็อก event loop ระหว่างเขียนดิสก์
+    """
+    if not (settings.DB_ENABLED and db.is_ready()):
+        return
+    try:
+        await asyncio.to_thread(
+            db.log_interaction,
+            session_id=session_id,
+            question=request_obj.message,
+            answer=answer,
+            mode=request_obj.mode,
+            model=request_obj.model,
+            system_selected=request_obj.system,
+            system_used=_effective_system(sources),
+            rag_used=bool(sources),
+            sources=sources,
+            abstained=rag_service.ABSTAIN_MARKER in (answer or ""),
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error=error,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("บันทึกประวัติไม่สำเร็จ session=%s", session_id)
+
+
+def _guard_input(message: str) -> guard.Verdict:
+    """ตรวจคำถามก่อนเข้ากระบวนการค้นคืน — ปิดได้ด้วย GUARD_ENABLED ใน .env"""
+    if not settings.GUARD_ENABLED:
+        return guard.PASS
+    return guard.check_input(message)
+
+
+def _guard_output(answer: str, context: str) -> guard.Verdict:
+    """ตรวจคำตอบเทียบกับบริบทที่ค้นคืนมาจริง (ใช้ System Prompt ของรอบนั้นเป็นบริบท)"""
+    if not (settings.GUARD_ENABLED and settings.GUARD_CHECK_OUTPUT):
+        return guard.PASS
+    return guard.check_output(answer, context)
 
 
 class ChatRequest(BaseModel):
@@ -152,6 +217,22 @@ async def get_systems():
     return {"systems": service.systems()}
 
 
+@router.get("/history")
+async def get_history(limit: int = 50, session_id: str | None = None):
+    """รายการถาม-ตอบล่าสุดที่บันทึกไว้ ใช้ดูย้อนหลังว่าผู้ใช้ถามอะไรกันบ้าง
+
+    ไม่ได้ทำหน้าเว็บให้ เพราะข้อมูลนี้เป็นคำถามของผู้ใช้จริง ไม่ควรเปิดให้ทุกคนที่เข้า
+    หน้าแชทเห็น — ตั้งใจให้เรียกผ่านเครื่องมือหรือสคริปต์ฝั่งผู้ดูแลเท่านั้น
+    """
+    if not settings.DB_ENABLED:
+        return {"enabled": False, "interactions": []}
+    return {
+        "enabled": True,
+        "db": db.status(),
+        "interactions": db.recent_interactions(limit=min(limit, 500), session_id=session_id),
+    }
+
+
 @router.post("/chat/reset")
 async def post_chat_reset(request: Request, response: Response):
     """ล้างประวัติบทสนทนาของ session นี้ โดยไม่ออก session_id ใหม่ — เบื้องหลังปุ่ม
@@ -170,6 +251,17 @@ async def post_chat(chat_request: ChatRequest, request: Request, response: Respo
     if is_new:
         _set_session_cookie(response, session_id)
     history = conversation_store.get(session_id, [])
+    started = time.perf_counter()
+
+    # ชั้นตรวจฝั่งคำถาม: ถ้าผิดกฎจะไม่ค้นคืนและไม่เรียกโมเดลเลย ประหยัดเวลาและไม่เปิด
+    # โอกาสให้คำสั่งแฝงเข้าไปถึงโมเดล บันทึกรหัสกฎไว้ในช่อง error เพื่อตรวจสอบย้อนหลัง
+    blocked = _guard_input(chat_request.message)
+    if blocked.blocked:
+        logger.warning("guard บล็อกคำถาม session=%s rule=%s", session_id, blocked.code)
+        await _log_turn(session_id=session_id, request_obj=chat_request,
+                        answer=blocked.message, sources=[], started=started,
+                        error=f"guard_input:{blocked.code}")
+        return ChatResponse(reply=blocked.message, sources=[])
 
     system_prompt, sources = await _retrieve(history, chat_request.message, chat_request.system)
 
@@ -180,7 +272,21 @@ async def post_chat(chat_request: ChatRequest, request: Request, response: Respo
         )
     except LLMConnectionError as exc:
         logger.error("chat ล้มเหลว session=%s: %s", session_id, exc.message)
+        # บันทึกรอบที่ล้มเหลวด้วย จะได้เห็นย้อนหลังว่าผู้ใช้เจอปัญหาตอนไหน ถามอะไรอยู่
+        await _log_turn(session_id=session_id, request_obj=chat_request, answer="",
+                        sources=sources, started=started, error=exc.message)
         return JSONResponse(status_code=502, content={"error": True, "message": exc.message})
+
+    # ชั้นตรวจฝั่งคำตอบ: ถ้าคำตอบมีอีเมลหรือเบอร์โทรที่ไม่มีอยู่ในบริบทที่ค้นคืนมา แปลว่า
+    # โมเดลแต่งขึ้นเอง ผู้ใช้ไม่ควรนำไปติดต่อจริง จึงแทนที่ด้วยข้อความปฏิเสธ และไม่เก็บ
+    # คำตอบนั้นไว้ในประวัติบทสนทนา เพื่อไม่ให้กลายเป็นบริบทของรอบถัดไป
+    verdict_out = _guard_output(reply_text, system_prompt)
+    if verdict_out.blocked:
+        logger.warning("guard บล็อกคำตอบ session=%s rule=%s", session_id, verdict_out.code)
+        await _log_turn(session_id=session_id, request_obj=chat_request,
+                        answer=verdict_out.message, sources=sources, started=started,
+                        error=f"guard_output:{verdict_out.code}")
+        return ChatResponse(reply=verdict_out.message, sources=sources)
 
     # ต่อประวัติด้วยข้อความรอบนี้ (ทั้งฝั่งผู้ใช้และ AI) เก็บไว้ใช้เป็น context รอบถัดไป
     # เก็บเฉพาะบทสนทนา ไม่เก็บบริบทที่ค้นคืนมา เพราะรอบถัดไปจะค้นใหม่ตามคำถามใหม่อยู่แล้ว
@@ -189,6 +295,8 @@ async def post_chat(chat_request: ChatRequest, request: Request, response: Respo
         {"role": "user", "content": chat_request.message},
         {"role": "assistant", "content": reply_text},
     ]
+    await _log_turn(session_id=session_id, request_obj=chat_request, answer=reply_text,
+                    sources=sources, started=started)
     return ChatResponse(reply=reply_text, sources=sources)
 
 
@@ -200,7 +308,24 @@ async def post_chat_stream(chat_request: ChatRequest, request: Request):
     async def event_generator():
         received_done = False
         accumulated_text = ""
+        sources: list[dict] = []
+        stream_error: str | None = None
+        started = time.perf_counter()
         try:
+            # ชั้นตรวจฝั่งคำถามทำงานกับโหมดสตรีมด้วย ส่งข้อความปฏิเสธเป็นก้อนเดียวแล้วจบ
+            # (ฝั่งคำตอบตรวจไม่ได้ในโหมดนี้ เพราะข้อความถูกส่งออกไปแล้วทีละส่วน)
+            blocked = _guard_input(chat_request.message)
+            if blocked.blocked:
+                logger.warning("guard บล็อกคำถาม session=%s rule=%s", session_id, blocked.code)
+                yield f"data: {json.dumps({'sources': []}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'delta': blocked.message}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
+                received_done = True
+                await _log_turn(session_id=session_id, request_obj=chat_request,
+                                answer=blocked.message, sources=[], started=started,
+                                error=f"guard_input:{blocked.code}")
+                return
+
             system_prompt, sources = await _retrieve(
                 history, chat_request.message, chat_request.system
             )
@@ -217,6 +342,7 @@ async def post_chat_stream(chat_request: ChatRequest, request: Request):
                     payload = {"delta": event["content"]}
                 elif event["type"] == "error":
                     logger.error("stream error session=%s: %s", session_id, event["message"])
+                    stream_error = event["message"]
                     payload = {"error": True, "message": event["message"]}
                 elif event["type"] == "done":
                     received_done = True
@@ -226,6 +352,7 @@ async def post_chat_stream(chat_request: ChatRequest, request: Request):
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         except Exception as exc:
             logger.exception("stream ล้มเหลวโดยไม่คาดคิด session=%s", session_id)
+            stream_error = str(exc)
             payload = {"error": True, "message": f"เกิดข้อผิดพลาดที่ไม่คาดคิด: {exc}"}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:
@@ -239,6 +366,12 @@ async def post_chat_stream(chat_request: ChatRequest, request: Request):
                 ]
             if not received_done:
                 yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
+            # บันทึกทุกกรณี รวมถึงตอนผู้ใช้กดหยุดกลางคัน (ได้คำตอบบางส่วน) และตอน error
+            # จะได้เห็นย้อนหลังว่าคำถามไหนทำให้ระบบมีปัญหา
+            if accumulated_text or stream_error:
+                await _log_turn(session_id=session_id, request_obj=chat_request,
+                                answer=accumulated_text, sources=sources,
+                                started=started, error=stream_error)
 
     resp = StreamingResponse(
         event_generator(),

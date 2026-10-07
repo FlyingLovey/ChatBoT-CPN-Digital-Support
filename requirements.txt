@@ -11,3 +11,5 @@ jinja2>=3.1.6
 pydantic-settings>=2.15.0
 python-dotenv>=1.2.2
 uvicorn[standard]>=0.52.1
+sqlalchemy>=2.0          # เก็บประวัติคำถาม-คำตอบ (ORM กลาง ไม่ผูกกับฐานข้อมูลใด)
+psycopg[binary]>=3.2     # ไดรเวอร์ PostgreSQL — [binary] มาพร้อม libpq ไม่ต้องคอมไพล์เอง
